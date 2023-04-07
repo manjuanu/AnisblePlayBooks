@@ -1,0 +1,96 @@
+---
+- name: opensips PlayBook
+  hosts: all
+  become: true
+  vars:
+  - repo:
+      RedHat:
+      - epel-release
+  - packages:
+      RedHat:
+      - git
+      - yum-utils
+      - gcc 
+      - gcc-c++ 
+      - bison 
+      - flex 
+      - zlib-devel 
+      - openssl-devel 
+      - mysql-devel 
+      - subversion 
+      - pcre-devel 
+      - vim 
+      - ncurses-devel 
+      - libmemcached-devel 
+      - libmicrohttpd-devel 
+      - libxml2-devel 
+      - net-tools 
+      - wget 
+      - libcurl-devel 
+      - libuuid-devel
+
+  tasks:
+  - name: Install Repo
+    package:
+      name: "{{ repo[ansible_os_family] }}"
+  - name: Update Yum
+    yum:
+      name: "*"
+      state: latest
+      update_cache: yes
+  - name: Install Dependencies
+    package:
+      name: "{{ packages[ansible_os_family] }}"
+      state: latest
+      update_cache: yes
+  - name: Clone opensips Repo from GIT
+    command:
+     chdir: /usr/local/src
+     cmd: git clone https://github.com/OpenSIPS/opensips.git -b 3.2.6 opensips-3.2.6
+  - name: module changes
+    command: mv /usr/local/src/opensips-3.2.6/modules/tls_wolfssl /opt/
+  - name: make
+    command:
+     chdir: /usr/local/src/opensips-3.2.6  
+     cmd: make all include_modules="db_mysql httpd" modules
+  - name: make install
+    command:
+     chdir: /usr/local/src/opensips-3.2.6
+     cmd: make install include_modules="db_mysql httpd" modules 
+  - name: touch opensips.service
+    file:
+      path: "/etc/systemd/system/opensips.service"
+      state: touch
+  - name: Edit opensips.service
+    blockinfile:
+      path: "/etc/systemd/system/opensips.service"
+      block: |
+       [Unit]
+       Description=OpenSIPS is a very fast and flexible SIP (RFC3261) server
+       After=network.target mariadb.service rtpengine.service
+ 
+       [Service]
+       Type=forking
+       User=root
+       Group=root
+       EnvironmentFile=/etc/sysconfig/opensips
+       # Run ExecStartPre with root-permissions
+       PermissionsStartOnly=true
+       ExecStart=/usr/local/sbin/opensips -P /var/run/opensips.pid -f /usr/local/etc/opensips/opensips.cfg #-m 10000 -M 64
+       Restart=always
+ 
+       [Install]
+       WantedBy=multi-user.target
+
+  - name: Touch opensips
+    file:
+     path: "/etc/sysconfig/opensips"
+     state: touch
+  - name: Daemon Reload
+    systemd:
+     daemon_reload: yes
+  - name: Start opensips
+    service:
+      name: opensips.service
+      state: started
+      enabled: yes
